@@ -21,8 +21,6 @@ import argparse, os, traceback
 from PIL import Image
 
 class Writer:
-	stdx = None #Output file.stdx
-	indentation = 0
 	def __init__(self, path):
 		self.stdx = open(path, 'w')
 		self.indentation = 0
@@ -42,7 +40,6 @@ class Writer:
 		self.stdx.close()
 
 class ImageFile:
-
 	@staticmethod
 	def from_path(filename, path):
 		try:
@@ -70,6 +67,13 @@ class ImageFile:
 	def set_loc(self, loc):
 		self.x = loc[0]
 		self.y = loc[1]
+		
+	def get(self, result):
+		'''
+		For use in recursive Directory.get()
+		'''
+		result.append(self.image)
+		return result
 
 class Directory:
 
@@ -97,32 +101,58 @@ class Directory:
 		#If name is None, then this is top dir so don't make new tag in file.
 		if self.name:
 			writer.begin_dir(self.name)
+		#Recursively write to file. Whether child is dir or file doesn't matter
+		# as both have .write() attributes
 		for child in self.children:
 			child.write(writer)
 		if self.name:
 			writer.end_dir()
+			
+	def get(self, result):
+		'''
+		Recursively fetch all image files in this directory
+		'''
+		for child in self.children:
+			result = child.get(result)
+		return result
+
+def all_fit(images, enclosing=None):
+	'''
+	See:
+	http://www.codeproject.com/Articles/210979/Fast-optimizing-rectangle-packing-algorithm-for-bu
+	to try to understand this function.
+	@param images: Set of images to fit into enclosing
+	@param enclosing: rectangle (width, height)
+	'''
+	#Enclosing rectangle. -1 means no limit
+	# [-1, height of first (largest) image]
+	if not enclosing:
+		enclosing = (-1, images[0].size[1])
 	
-
-def load_all(path):
-	'''
-	@param path: parent directory of all images subdirectories will be
-		explored
-	@return: list of lists which look like: [string path, Image]
-	'''
-	images = []
-	count = 0
-	for root, dirs, files in os.walk(path):
-		for filename in files:
-			if filename[-4:] != ".png":
-				continue
-			file_path = os.path.join(root, filename)
-			relative = file_path[len(path):]
-			images.append((relative, Image.open(file_path)))
-			count += 1
-	print("Loaded", count, "images.")
-	return images
-
-def organise(images):
+	#A 2D array of booleans.
+	occupied = [[False]]
+	column_widths = [enclosing[0]]
+	row_heights = [enclosing[1]]
+	
+	#Array of images
+	final_images = []
+	
+	#For each image,
+	for rect in (image.size for image in images):
+		#Check all rows,
+		for row, height in zip(occupied, row_heights):
+			#and cells in those rows,
+			for cell, width in zip(row, column_widths):
+				#to see if the image fits
+				if cell:
+					if rect[0] <= width and rect[1] <= height:
+						column_widths.append(width - rect[0])
+						row_heights.append(height - rect[1])
+				else:
+					pass
+					
+	
+def organise(images, enclosing):
 	'''
 	@param images: Ordered in height order, tallest first
 	@return: (final image size, list of lists: [path, (x, y), Image])
@@ -130,9 +160,9 @@ def organise(images):
 	final_size = 0
 	final_images = []
 	for image in images:
-		final_size += image[1].size[0]
-		final_images.append((image[0], (final_size, 0), image[1]))
-	return (final_size, images[0][1].size[1]), final_images
+		final_size += image.size[0]
+		final_images.append((image, (final_size, 0)))
+	return (final_size, images[0].size[1]), final_images
 
 def start():
 	#Parse all arguments as string paths to image files
@@ -143,14 +173,11 @@ def start():
 	args = parser.parse_args()
 	print("Loading all images from:", args.base)
 	
-	images = load_all(args.base)
 	base_dir = Directory(args.base)
-	writer = Writer(args.index)
-	base_dir.write(writer)
-	writer.finish()
+	images = base_dir.get([])
 
 	#Sort images by height, largest first.
-	images = sorted(images, key=lambda val: val[1].size[1])
+	images = sorted(images, key=lambda val: val.size[1])
 	images = list(reversed(images))
 	#Debug: Print images and heights
 	#for img in images:
@@ -167,10 +194,15 @@ def start():
 	#Create Image to hold sprites
 	final = Image.new("RGBA", organisation[0], (0,0,0,0))
 	print("Pasting files onto blank image...")
-	for path, loc, image in organisation[1]:
+	for image, loc in organisation[1]:
 		final.paste(image, loc)
 	print("Saving as", args.output + "...")
 	final.save(args.output)
+	
+	print("Writing Index File...")
+	writer = Writer(args.index)
+	base_dir.write(writer)
+	writer.finish()
 
 if __name__ == "__main__":
 	start()
