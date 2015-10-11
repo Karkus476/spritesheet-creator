@@ -19,6 +19,7 @@
 
 import argparse, os, traceback
 from PIL import Image
+from packing import EnclosingRect
 
 class Writer:
 	def __init__(self, path):
@@ -72,7 +73,7 @@ class ImageFile:
 		'''
 		For use in recursive Directory.get()
 		'''
-		result.append(self.image)
+		result.append(self)
 		return result
 
 class Directory:
@@ -89,7 +90,6 @@ class Directory:
 				else:
 					pass #file not image
 			elif os.path.isdir(full_path):
-				print("Directory:", full_path)
 				directory = Directory(full_path, name)
 				self.children.append(directory)
 			else:
@@ -115,54 +115,22 @@ class Directory:
 		for child in self.children:
 			result = child.get(result)
 		return result
-
-def all_fit(images, enclosing=None):
-	'''
-	See:
-	http://www.codeproject.com/Articles/210979/Fast-optimizing-rectangle-packing-algorithm-for-bu
-	to try to understand this function.
-	@param images: Set of images to fit into enclosing
-	@param enclosing: rectangle (width, height)
-	'''
-	#Enclosing rectangle. -1 means no limit
-	# [-1, height of first (largest) image]
-	if not enclosing:
-		enclosing = (-1, images[0].size[1])
-	
-	#A 2D array of booleans.
-	occupied = [[False]]
-	column_widths = [enclosing[0]]
-	row_heights = [enclosing[1]]
-	
-	#Array of images
-	final_images = []
-	
-	#For each image,
-	for rect in (image.size for image in images):
-		#Check all rows,
-		for row, height in zip(occupied, row_heights):
-			#and cells in those rows,
-			for cell, width in zip(row, column_widths):
-				#to see if the image fits
-				if cell:
-					if rect[0] <= width and rect[1] <= height:
-						column_widths.append(width - rect[0])
-						row_heights.append(height - rect[1])
-				else:
-					pass
 					
 	
-def organise(images, enclosing):
+def organise(images):
 	'''
 	@param images: Ordered in height order, tallest first
-	@return: (final image size, list of lists: [path, (x, y), Image])
+	@return: (final image size, list of lists: [(Image, loc)])
 	'''
-	final_size = 0
-	final_images = []
-	for image in images:
-		final_size += image.size[0]
-		final_images.append((image, (final_size, 0)))
-	return (final_size, images[0].size[1]), final_images
+	enclosing = EnclosingRect()
+	one_percent = round(len(images) / 100)
+	counter = 0
+	for imgfile in images:
+		imgfile.set_loc(enclosing.add_rect(imgfile.image.size[0], imgfile.image.size[1]))
+		counter += 1
+		if one_percent and counter % one_percent == 0:
+			print(str(int(counter/one_percent)) + "%")
+	return enclosing.get_size(enclosing.rects), images
 
 def start():
 	#Parse all arguments as string paths to image files
@@ -175,9 +143,10 @@ def start():
 	
 	base_dir = Directory(args.base)
 	images = base_dir.get([])
+	print("Found", len(images), "images.")
 
 	#Sort images by height, largest first.
-	images = sorted(images, key=lambda val: val.size[1])
+	images = sorted(images, key=lambda img: img.image.size[1])
 	images = list(reversed(images))
 	#Debug: Print images and heights
 	#for img in images:
@@ -194,8 +163,8 @@ def start():
 	#Create Image to hold sprites
 	final = Image.new("RGBA", organisation[0], (0,0,0,0))
 	print("Pasting files onto blank image...")
-	for image, loc in organisation[1]:
-		final.paste(image, loc)
+	for image in organisation[1]:
+		final.paste(image.image, image.get_loc())
 	print("Saving as", args.output + "...")
 	final.save(args.output)
 	
