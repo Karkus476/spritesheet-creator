@@ -6,4 +6,4 @@ Requirements:
 * PIL (Python Imaging Library) for Python 3
 
 Usage:
-python3 <directory> <new spritesheet path> <info file>
+python3 directory new_spritesheet_path info_file
