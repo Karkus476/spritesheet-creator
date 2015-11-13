@@ -17,7 +17,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import argparse, os, traceback
+import argparse, os, traceback, datetime
 from PIL import Image
 from packing import EnclosingRect
 from sexpr_writer import SExprWriter
@@ -132,19 +132,21 @@ def organise(images):
 	enclosing = EnclosingRect()
 	one_percent = round(len(images) / 100)
 	counter = 0
+	print("Packing Images Onto Spritesheet")
+	before = datetime.datetime.now()
 	for imgfile in images:
 		imgfile.set_loc(enclosing.add_rect(imgfile.image.size[0], imgfile.image.size[1]))
 		counter += 1
 		if one_percent and counter % one_percent == 0:
 			print(str(int(counter/one_percent)) + "%")
+	print("Done. Took", str((datetime.datetime.now() - before).seconds) +"s")
 	return enclosing.get_size(enclosing.rects), images
 
 def start():
 	#Parse all arguments as string paths to image files
 	parser = argparse.ArgumentParser()
-	parser.add_argument("base", help="Parent directory of images to add to spritesheet",type=str)
 	parser.add_argument("output", help="Output file path.",type=str)
-	parser.add_argument("index", help="Output .stdx path.",type=str)
+	parser.add_argument("images", help="Images to add to spritesheet",type=str, nargs="*")
 	args = parser.parse_args()
 	print("Loading all images from:", args.base)
 	
